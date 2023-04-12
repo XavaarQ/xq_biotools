@@ -1,0 +1,28 @@
+LOCUS       m6456489                 879 bp    DNA              UNK 01-JAN-1980
+DEFINITION  dapA.
+ACCESSION   m6456489
+VERSION     m6456489
+KEYWORDS    .
+SOURCE      .
+  ORGANISM  .
+            .
+FEATURES             Location/Qualifiers
+     gene            1..879
+                     /standard_name="dapA"
+ORIGIN
+        1 atgttcacgg gaagtattgt cgcgattgtt actccgatgg atgaaaaagg taatgtctgt
+       61 cgggctagct tgaaaaaact gattgattat catgtcgcca gcggtacttc ggcgatcgtt
+      121 tctgttggca ccactggcga gtccgctacc ttaaatcatg acgaacatgc tgatgtggtg
+      181 atgatgacgc tggatctggc tgatgggcgc attccggtaa ttgccgggac cggcgctaac
+      241 gctactgcgg aagccattag cctgacgcag cgcttcaatg acagtggtat cgtcggctgc
+      301 ctgacggtaa ccccttacta caatcgtccg tcgcaagaag gtttgtatca gcatttcaaa
+      361 gccatcgctg agcatactga cctgccgcaa attctgtata atgtgccgtc ccgtactggc
+      421 tgcgatctgc tcccggaaac ggtgggccgt ctggcgaaag taaaaaatat tatcggaatc
+      481 aaagaggcaa cagggaactt aacgcgtgta aaccagatca aagagctggt ttcagatgat
+      541 tttgttctgc tgagcggcga tgatgcgagc gcgctggact tcatgcaatt gggcggtcat
+      601 ggggttattt ccgttacggc taacgtcgca gcgcgtgata tggcccagat gtgcaaactg
+      661 gcagcagaag ggcattttgc cgaggcacgc gttattaatc agcgtctgat gccattacac
+      721 aacaaactat ttgtcgaacc caatccaatc ccggtgaaat gggcatgtaa ggaactgggt
+      781 cttgtggcga ccgatacgct gcgcctgcca atgacaccaa tcaccgacag tggtcgtgag
+      841 acggtcagag cggcgcttaa gcatgccggt ttgctgtaa
+//
