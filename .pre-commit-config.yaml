@@ -1,0 +1,49 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-executables-have-shebangs
+      - id: check-toml
+      - id: check-yaml
+      - id: debug-statements
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        args:
+          - --line-length=100
+          - --multi-line=3
+          - --trailing-comma
+
+  - repo: https://github.com/psf/black
+    rev: 23.1.0
+    hooks:
+      - id: black
+        additional_dependencies: ['click==8.0.4']
+        args:
+          - --line-length=100
+          - --include='\.pyi?$'
+          - --exclude="""\.git |
+            \.__pycache__|
+            \.hg|
+            \.mypy_cache|
+            \.tox|
+            \.venv|
+            _build|
+            buck-out|
+            build|
+            dist"""
+
+  - repo: local
+    hooks:
+     - id: unittest
+       name: unittest
+       entry: python3 -m unittest discover
+       language: system
+       'types': [python]
+       pass_filenames: false
+       stages: [commit]

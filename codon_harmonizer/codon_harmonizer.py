@@ -3,18 +3,16 @@ Codon Harmonizer
 David Bauwens, Xavaar
 """
 import itertools
-import os
 import sys
+import tempfile
 
 import numpy as np
 import pandas as pd
 import seaborn as sns
 
 sns.set()
-import argparse
 import logging
 import re
-import typing
 from pathlib import Path
 
 import Bio
@@ -22,14 +20,17 @@ import ete3
 import matplotlib.pyplot as plt
 import requests
 from BCBio import GFF
+from beartype import beartype
+from beartype.typing import List, Tuple, Union
 from bs4 import BeautifulSoup
+from gff2genbank import _split_fasta_from_gff, gff2genbank
 
 
 def codon_harmonizer_from_file(
-    sequences: typing.List[str],
+    sequences: List[str],
     source_codon_usage_table: pd.core.frame.DataFrame,
     target_codon_usage_table: pd.core.frame.DataFrame,
-):
+) -> Path:
     """
     Transcribes sequences from .gb files into version harmonized for a specific organism
     Codon tables are derived from https://www.kazusa.or.jp/codon
@@ -51,8 +52,10 @@ def codon_harmonizer_from_file(
 
     main_wd = Path().absolute()
 
-    init_folders = initialize_directories(main_wd)
-    recs = turn_file_into_seq_records(init_folders, sequences)
+    name_prefix = "codon_harmonizer_files"
+    named_dir = create_named_temporary_directory(name_prefix)
+
+    recs = turn_file_into_seq_records(named_dir, sequences)
 
     new_recs = []
     for rec in recs:
@@ -65,157 +68,51 @@ def codon_harmonizer_from_file(
         rec.name = rec.name.replace(" ", "").strip()
         new_recs.append(rec)
 
-    outfile_name = (
-        init_folders["harmonized_sequence"] / f"{sequences.name.split('.')[-2]}_harmonized_seqs"
-    )
+    # Make subdirectories in the output dir
+    log_dir = Path(named_dir, "logs")
+    harmonized_seqs_dir = Path(named_dir, "harmonized_sequence")
+    for _dir in [log_dir, harmonized_seqs_dir]:
+        _dir.mkdir(parents=True)
 
-    Path("codon_usage_comparison.png").rename(init_folders["logs"] / "codon_usage_comparison.png")
-    Path("codon_comparison.csv").rename((init_folders["logs"] / "codon_comparison.csv"))
+    outfile_name = harmonized_seqs_dir / f"{sequences.name.split('.')[-2]}_harmonized_seqs"
+
+    Path("codon_usage_comparison.png").rename(log_dir / "codon_usage_comparison.png")
+    Path("codon_comparison.csv").rename((log_dir / "codon_comparison.csv"))
     write_gb(outfile_name, new_recs, "gb")
     print(f"New sequences written to {outfile_name}")
 
-
-##%% Arg Inputs
-def argInputs():
-    parser = argparse.ArgumentParser(
-        prog="Codon Harmonizer",
-        description="Harmonizes Codons",
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-
-    g1 = parser.add_argument_group("Required Inputs")
-    g2 = parser.add_argument_group("Optional Inputs")
-    g3 = parser.add_argument_group("Advanced and Developer Options")
-
-    g1.add_argument(
-        "--sequences",
-        "-seqs",
-        metavar="Files for the sequences to be harmonized",
-        help="Upload a file (.gb/.fasta/.gff) of the sequenced you want harmonized",
-        type=argparse.FileType("r"),
-        required=True,
-    )
-
-    g1.add_argument(
-        "--source_species",
-        "-srcS",
-        metavar="",
-        help="",
-        type=str,
-    )
-
-    g1.add_argument(
-        "--target_species",
-        "-tgtS",
-        metavar="",
-        help="",
-        type=str,
-    )
-
-    g2.add_argument(
-        "--source_codon_usage_table",
-        "-srcT",
-        metavar="",
-        help="",
-        type=argparse.FileType("r"),
-    )
-
-    g2.add_argument(
-        "--target_codon_usage_table",
-        "-tgtT",
-        metavar="",
-        help="",
-        type=argparse.FileType("r"),
-    )
-
-    args = parser.parse_args()
-    #     print(args)
-    #     sys.exit()
-    return args
+    return outfile_name
 
 
-# #%%
+def create_named_directory(name_prefix):
+    path = Path(name_prefix)
+    path.mkdir()
+    return path
 
 
-def initialize_directories(main_wd):
-    sub_dir = main_wd / "codon_harmonizer_files"
-
-    init_folders = ["source_sequence", "harmonized_sequence", "logs"]
-    init_folders = {
-        init_folders[i]: [sub_dir / x for x in init_folders][i] for i in range(len(init_folders))
-    }
-
-    for folder in list(init_folders.values()):
-        if not folder.is_dir():
-            folder.mkdir(parents=True)
-
-    return init_folders
-
-
-def turn_file_into_seq_records(init_folders, arg_file):
-    if type(arg_file) == str:
+def turn_file_into_seq_records(temp_dir, arg_file):
+    if isinstance(arg_file, str):
         arg_file = open(arg_file, "r", encoding="utf-8")
 
-    file_ext = os.path.splitext(arg_file.name)[-1]
+    arg_file_path = Path(arg_file.name)
+    file_ext = arg_file_path.suffix
 
     if file_ext in (".gff", ".gff3"):
-        new_gff, fasta = split_fasta_from_GFF(arg_file, init_folders)
+        new_gff, fasta = _split_fasta_from_gff(arg_file, temp_dir)
         new_gb = gff2genbank(new_gff, fasta_file=fasta, molecule_type="DNA")
-        recs = get_gb_seq(new_gb, init_folders)
+        recs = get_gb_seq(new_gb)
 
-    elif file_ext in (
-        ".gb",
-        ".gbk",
-    ):
-        recs = get_gb_seq(arg_file, init_folders)
-    elif file_ext in (
-        ".fa",
-        ".fasta",
-    ):
+    elif file_ext in (".gb", ".gbk"):
+        recs = get_gb_seq(arg_file)
+    elif file_ext in (".fa", ".fasta"):
         recs = get_fasta_seq(arg_file)
-
     else:
-        raise Exception(f"Unnaceptable file type{file_ext}")
-        logging.error(f"Unnaceptable file type{file_ext}")
+        raise Exception(f"Unacceptable file type {file_ext}")
+        logging.error(f"Unacceptable file type {file_ext}")
     return recs
 
 
-# Split FASTA from GFF
-def split_fasta_from_GFF(in_file, init_folders):
-    new_gff = init_folders["new_gff"] / in_file.name.split(".")[0] + "_2.gff"
-    fasta_file = init_folders["fasta"] / in_file.name.split(".")[0] + ".fasta"
-
-    out_n = 0
-    done = False
-
-    while not done:  # loop over output file names
-        if out_n == 0:
-            outfile = new_gff
-        elif out_n == 1:
-            outfile = fasta_file
-        else:
-            logging.error("something weird happened")
-            raise Error("something weird happened")
-
-        with open(outfile, "w") as out_file:  # generate an output file name
-            while not done:  # loop over lines in inuput file and write to output file
-                try:
-                    line = next(in_file).strip()  # strip whitespace for consistency
-                except StopIteration:
-                    done = True
-                    break
-                if "##FASTA" in line:  # more robust than 'if line == "SPLIT\n":'
-                    break
-                else:
-                    out_file.write(
-                        line + "\n"
-                    )  # must add back in newline because we stripped it out earlier
-            out_n += 1  # increment output file name integer
-
-    return (new_gff, fasta_file)
-
-
-def get_gb_seq(in_file, init_folders):
+def get_gb_seq(in_file):
     #     seq = Bio.SeqIO.parse(in_file, "genbank")
     recs = []
     counter = 0
@@ -247,63 +144,6 @@ def get_fasta_seq(fasta_file):
     return sequence_record
 
 
-# gff2genbank     https://github.com/chapmanb/bcbb/blob/master/gff/Scripts/gff/gff_to_genbank.py
-def gff2genbank(gff_file, fasta_file=None, molecule_type="DNA"):
-    if type(gff_file) == str:
-        gff_file_name = gff_file
-    elif isinstance(gff_file, io.IOBase):
-        gff_file_name = gff_file.name
-    else:
-        raise Exception("Something went wrong")
-
-    out_file = "%s.gb" % os.path.splitext(gff_file_name)[0]
-    if fasta_file:
-        fasta_input = Bio.SeqIO.to_dict(Bio.SeqIO.parse(fasta_file, "fasta"))
-    else:
-        fasta_input = {}
-    gff_iter = GFF.parse(gff_file, fasta_input)
-    Bio.SeqIO.write(_check_gff(_fix_ncbi_id(gff_iter), molecule_type), out_file, "genbank")
-    return out_file
-
-
-def _fix_ncbi_id(fasta_iter):
-    """GenBank identifiers can only be 16 characters; try to shorten NCBI."""
-    for rec in fasta_iter:
-        if len(rec.name) > 16 and rec.name.find("|") > 0:
-            new_id = [x for x in rec.name.split("|") if x][-1]
-            warnings.warn("Warning: shortening NCBI name %s to %s" % (rec.id, new_id))
-            rec.id = new_id
-            rec.name = new_id
-        yield rec
-
-
-def _check_gff(gff_iterator, molecule_type):
-    """Check GFF files before feeding to SeqIO to be sure they have sequences."""
-    for rec in gff_iterator:
-        if "molecule_type" not in rec.annotations:
-            rec.annotations["molecule_type"] = molecule_type
-        yield _flatten_features(rec)
-
-
-def _flatten_features(rec):
-    """Make sub_features in an input rec flat for output.
-    GenBank does not handle nested features, so we want to make
-    everything top level.
-    """
-    out = []
-    for f in rec.features:
-        cur = [f]
-        while len(cur) > 0:
-            nextf = []
-            for curf in cur:
-                out.append(curf)
-                if len(curf.sub_features) > 0:
-                    nextf.extend(curf.sub_features)
-            cur = nextf
-    rec.features = out
-    return rec
-
-
 # codon_harmonizer
 def codon_harmonizer(
     sequence: str,
@@ -332,8 +172,6 @@ def codon_harmonizer(
     source_codon_usage_table: pd.core.frame.DataFrame = pd.DataFrame(),
 
     target_codon_usage_table: pd.core.frame.DataFrame = pd.DataFrame(),
-
-
 
     Return
     ----------
@@ -408,14 +246,12 @@ def codon_harmonizer(
     )  # If there are nucleotide that don't fit in a codon (and extra T for example) this will eliminate them from the sequence
 
     a = df6["codon_target"].to_list()
-    
+
     harmonized_sequence = "".join(a)
 
     harmonized_sequence = harmonized_sequence.replace("U", "T")
 
-    if df_final_in["amino_acid"].to_list() == df6["amino_acid"].to_list():
-        print("The Amino Acid sequences are identical")
-    else:
+    if not df_final_in["amino_acid"].to_list() == df6["amino_acid"].to_list():
         raise Error("The Amnino Acid sequences are not identical")
 
     df_diff2 = abs(df6["fraction_target"] - df_final_in["fraction"])
@@ -435,27 +271,6 @@ def codon_harmonizer(
     return harmonized_sequence
 
 
-def write_gb(out_filename: str, output_records: list, filetype: str):
-    #     print(output_records)
-    #     sys.exit()
-    with open(f"{out_filename}.{filetype}", "w+") as handle:
-        for record in output_records:
-            try:
-                if filetype == "gff":
-                    GFF.write([record], handle, include_fasta=True)
-                else:
-                    Bio.SeqIO.write(record, handle, filetype)
-
-            except NameError as error:
-                logging.warning(
-                    f"{error}: aka. Molecules with whitespace in the name can't be written to genbank:\n\r {record.name} \n\r"
-                )
-    #             except (ValueError) as error:
-    #                 print(error)
-
-    print("\nDone\n")
-
-
 def check_taxonomic_nomenclature(in_string):
     numeric_pattern = re.compile("[0-9]")
     numeric_match = numeric_pattern.match(in_string)
@@ -473,6 +288,23 @@ def check_taxonomic_nomenclature(in_string):
         return False
     else:
         return True
+
+
+def write_gb(out_filename: str, output_records: list, filetype: str):
+    with open(f"{out_filename}.{filetype}", "w+") as handle:
+        for record in output_records:
+            try:
+                if filetype == "gff":
+                    GFF.write([record], handle, include_fasta=True)
+                else:
+                    Bio.SeqIO.write(record, handle, filetype)
+
+            except NameError as error:
+                logging.warning(
+                    f"{error}: aka. Molecules with whitespace in the name can't be written to genbank:\n\r {record.name} \n\r"
+                )
+
+    return out_filename
 
 
 # for string in ['9606','Homo sapiens', 'Homo Sapiens', 'homo sapiens','HoMo sapiens','sapiens','Homosapiens']:
@@ -533,10 +365,7 @@ def codon_database_scraper(species_ncbi_id: str):
     return frequency_table
 
 
-# codon_database_scraper(url)
-
-
-def get_codon_table_for_species(species):
+def get_codon_table_for_species(species: Union[str, int]):
     ncbi = ete3.NCBITaxa()
     species = str(species)
     if check_taxonomic_nomenclature(species):
@@ -545,24 +374,3 @@ def get_codon_table_for_species(species):
         species_id = species
 
     return codon_database_scraper(species_id)
-
-
-# %% Main
-def main():
-    args = argInputs()
-
-    if args.source_species is not None:
-        src_DF = get_codon_table_for_species(args.source_species)
-    else:
-        src_DF = pd.read_csv(args.source_codon_usage_table)
-
-    if args.target_species is not None:
-        tgt_DF = get_codon_table_for_species(args.target_species)
-    else:
-        tgt_DF = pd.read_csv(args.target_codon_usage_table)
-
-    codon_harmonizer_from_file(args.sequences, src_DF, tgt_DF)
-
-
-if __name__ == "__main__":
-    main()
